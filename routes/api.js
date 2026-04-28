@@ -32,14 +32,17 @@ router.post('/register-team', async (req, res) => {
 
         await newTeam.save();
 
-        // Dummy n8n webhook call (non-blocking)
-        if (process.env.N8N_WEBHOOK_URL) {
-            axios.post(process.env.N8N_WEBHOOK_URL, {
+        // n8n Registration webhook call (non-blocking)
+        if (process.env.N8N_REGISTRATION_WEBHOOK) {
+            axios.post(process.env.N8N_REGISTRATION_WEBHOOK, {
                 event: 'team_registered',
                 teamId: newTeam.teamId,
                 teamName: newTeam.teamName,
-                emails: members.map(m => m.email)
-            }).catch(err => console.error('n8n webhook error:', err.message));
+                members: members.map(m => ({
+                    name: m.name,
+                    email: m.email
+                }))
+            }).catch(err => console.error('n8n registration webhook error:', err.message));
         }
 
         res.status(201).json({ message: 'Team registered successfully', team: newTeam });
@@ -117,13 +120,13 @@ router.get('/top-teams', async (req, res) => {
         const teams = await Team.find({ teamId: { $in: teamIds } });
 
         // Map evaluations to team names and combine
-        const topTeams = topEvaluations.map(eval => {
-            const team = teams.find(t => t.teamId === eval.teamId);
+        const topTeams = topEvaluations.map(teamEval => {
+            const team = teams.find(t => t.teamId === teamEval.teamId);
             return {
-                teamId: eval.teamId,
+                teamId: teamEval.teamId,
                 teamName: team ? team.teamName : 'Unknown',
-                totalScore: eval.totalScore,
-                scores: eval.scores
+                totalScore: teamEval.totalScore,
+                scores: teamEval.scores
             };
         });
 
@@ -145,14 +148,68 @@ router.get('/all-teams', async (req, res) => {
         
         // Merge evaluations into teams
         const merged = teams.map(team => {
-            const eval = evaluations.find(e => e.teamId === team.teamId);
+            const teamEval = evaluations.find(e => e.teamId === team.teamId);
             return {
                 ...team,
-                evaluation: eval || null
+                evaluation: teamEval || null
             };
         });
 
         res.json({ teams: merged });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /distribute-certificates
+router.post('/distribute-certificates', async (req, res) => {
+    try {
+        if (!process.env.N8N_CERTIFICATE_WEBHOOK) {
+            return res.status(400).json({ error: 'Certificate webhook URL not configured' });
+        }
+
+        const teams = await Team.find().lean();
+        const evaluations = await Evaluation.find().lean();
+
+        // Sort evaluations by score descending
+        const sortedEvaluations = [...evaluations].sort((a, b) => b.totalScore - a.totalScore);
+        
+        // Map teamId -> Rank
+        const rankMap = {};
+        for (let i = 0; i < sortedEvaluations.length; i++) {
+            const tId = sortedEvaluations[i].teamId;
+            if (i === 0) rankMap[tId] = '1st';
+            else if (i === 1) rankMap[tId] = '2nd';
+            else if (i === 2) rankMap[tId] = '3rd';
+            else rankMap[tId] = 'Participated';
+        }
+
+        let emailCount = 0;
+
+        // Iterate all teams and members
+        teams.forEach(team => {
+            // Teams that never got evaluated will just get 'Participated'
+            const rank = rankMap[team.teamId] || 'Participated';
+            
+            team.members.forEach(member => {
+                const payload = {
+                    memberName: member.name,
+                    email: member.email,
+                    teamName: team.teamName,
+                    teamId: team.teamId,
+                    rank: rank
+                };
+
+                // Fire off an individual webhook POST per member
+                axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, payload)
+                    .catch(err => console.error(`n8n certificate webhook error for ${member.email}:`, err.message));
+                
+                emailCount++;
+            });
+        });
+
+        res.json({ message: 'Certificate distribution triggered successfully', emailsQueued: emailCount });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal server error' });
