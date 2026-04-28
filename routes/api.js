@@ -78,8 +78,9 @@ router.get('/team/:id', async (req, res) => {
 router.post('/evaluate-team', async (req, res) => {
     try {
         const { teamId, scores, supervisorId } = req.body;
+        console.log(`Evaluating team ${teamId} for supervisor ${supervisorId}`);
         
-        if (!['admin1', 'admin2', 'admin3'].includes(supervisorId)) {
+        if (!['admin1', 'admin2', 'admin3', 'admin'].includes(supervisorId)) {
             return res.status(400).json({ error: 'Invalid supervisor ID' });
         }
 
@@ -89,30 +90,41 @@ router.post('/evaluate-team', async (req, res) => {
         }
 
         const { idea, speech, problemSolution, presentation, futureScope } = scores;
-        const supervisorTotal = idea + speech + problemSolution + presentation + futureScope;
+        const supervisorTotal = Number(idea) + Number(speech) + Number(problemSolution) + Number(presentation) + Number(futureScope);
 
         let evaluation = await Evaluation.findOne({ teamId });
         if (!evaluation) {
             evaluation = new Evaluation({ teamId });
         }
 
-        evaluation.supervisorEvaluations = evaluation.supervisorEvaluations || {};
+        // Initialize if empty
+        if (!evaluation.supervisorEvaluations) {
+            evaluation.supervisorEvaluations = {};
+        }
+
         evaluation.supervisorEvaluations[supervisorId] = {
             idea, speech, problemSolution, presentation, futureScope,
             total: supervisorTotal
         };
 
+        // Mark as modified for dynamic keys
+        evaluation.markModified('supervisorEvaluations');
+
         const evals = evaluation.supervisorEvaluations;
-        const totalRaw = (evals.admin1?.total || 0) + (evals.admin2?.total || 0) + (evals.admin3?.total || 0);
-        evaluation.totalScore = Math.round((totalRaw / 150) * 100);
+        const totalRaw = (evals.admin1?.total || 0) + 
+                         (evals.admin2?.total || 0) + 
+                         (evals.admin3?.total || 0) + 
+                         (evals.admin?.total || 0);
+        
+        // Use divisor 300 since each supervisor is 100 max
+        evaluation.totalScore = Math.round((totalRaw / 300) * 100);
         evaluation.updatedAt = new Date();
 
         await evaluation.save();
-
         res.json({ message: 'Evaluation saved successfully', evaluation });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Evaluation Error Details:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });
 
