@@ -77,24 +77,37 @@ router.get('/team/:id', async (req, res) => {
 // POST /evaluate-team
 router.post('/evaluate-team', async (req, res) => {
     try {
-        const { teamId, scores } = req.body;
+        const { teamId, scores, supervisorId } = req.body;
         
-        // Validate team exists
+        if (!['admin1', 'admin2', 'admin3'].includes(supervisorId)) {
+            return res.status(400).json({ error: 'Invalid supervisor ID' });
+        }
+
         const team = await Team.findOne({ teamId });
         if (!team) {
             return res.status(404).json({ error: 'Team not found' });
         }
 
-        // Calculate total score
         const { idea, speech, problemSolution, presentation, futureScope } = scores;
-        const totalScore = idea + speech + problemSolution + presentation + futureScope;
+        const supervisorTotal = idea + speech + problemSolution + presentation + futureScope;
 
-        // Upsert evaluation
-        const evaluation = await Evaluation.findOneAndUpdate(
-            { teamId },
-            { scores, totalScore, evaluatedAt: new Date() },
-            { new: true, upsert: true }
-        );
+        let evaluation = await Evaluation.findOne({ teamId });
+        if (!evaluation) {
+            evaluation = new Evaluation({ teamId });
+        }
+
+        evaluation.supervisorEvaluations = evaluation.supervisorEvaluations || {};
+        evaluation.supervisorEvaluations[supervisorId] = {
+            idea, speech, problemSolution, presentation, futureScope,
+            total: supervisorTotal
+        };
+
+        const evals = evaluation.supervisorEvaluations;
+        const totalRaw = (evals.admin1?.total || 0) + (evals.admin2?.total || 0) + (evals.admin3?.total || 0);
+        evaluation.totalScore = Math.round((totalRaw / 150) * 100);
+        evaluation.updatedAt = new Date();
+
+        await evaluation.save();
 
         res.json({ message: 'Evaluation saved successfully', evaluation });
     } catch (error) {

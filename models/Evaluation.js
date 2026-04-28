@@ -1,16 +1,23 @@
 const mongoose = require('mongoose');
 
+const scoreSchema = new mongoose.Schema({
+    idea: { type: Number, default: 0, min: 0, max: 10 },
+    speech: { type: Number, default: 0, min: 0, max: 10 },
+    problemSolution: { type: Number, default: 0, min: 0, max: 10 },
+    presentation: { type: Number, default: 0, min: 0, max: 10 },
+    futureScope: { type: Number, default: 0, min: 0, max: 10 },
+    total: { type: Number, default: 0 }
+}, { _id: false });
+
 const evaluationSchema = new mongoose.Schema({
     teamId: { type: String, required: true, unique: true },
-    scores: {
-        idea: { type: Number, required: true, min: 0, max: 10 },
-        speech: { type: Number, required: true, min: 0, max: 10 },
-        problemSolution: { type: Number, required: true, min: 0, max: 10 },
-        presentation: { type: Number, required: true, min: 0, max: 10 },
-        futureScope: { type: Number, required: true, min: 0, max: 10 }
+    supervisorEvaluations: {
+        admin1: scoreSchema,
+        admin2: scoreSchema,
+        admin3: scoreSchema
     },
-    totalScore: { type: Number, required: true, default: 0 },
-    evaluatedAt: { type: Date, default: Date.now }
+    totalScore: { type: Number, required: true, default: 0 }, // Normalized out of 100
+    updatedAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('Evaluation', evaluationSchema);
