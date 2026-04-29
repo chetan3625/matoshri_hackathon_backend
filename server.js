@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const apiRoutes = require('./routes/api');
+const Admin = require('./models/Admin');
+const bcrypt = require('bcryptjs');
+
 
 dotenv.config();
 
@@ -18,9 +21,31 @@ mongoose.connect(process.env.MONGODB_URI, {
     useUnifiedTopology: true,
 }).then(() => {
     console.log('Connected to MongoDB');
+    seedSuperAdmin();
 }).catch(err => {
     console.error('MongoDB connection error:', err);
 });
+
+// Seed Super Admin
+async function seedSuperAdmin() {
+    try {
+        const superAdminExists = await Admin.findOne({ username: 'superadmin' });
+        if (!superAdminExists) {
+            const hashedPassword = await bcrypt.hash('pass@123', 10);
+            const superAdmin = new Admin({
+                username: 'superadmin',
+                password: hashedPassword,
+                name: 'Super Admin',
+                role: 'super_admin'
+            });
+            await superAdmin.save();
+            console.log('Super Admin seeded successfully');
+        }
+    } catch (error) {
+        console.error('Error seeding Super Admin:', error);
+    }
+}
+
 
 // Routes
 app.use('/api', apiRoutes);
