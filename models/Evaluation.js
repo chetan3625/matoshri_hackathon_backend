@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
 
 const scoreSchema = new mongoose.Schema({
-    idea: { type: Number, default: 0, min: 0, max: 20 },
-    speech: { type: Number, default: 0, min: 0, max: 20 },
-    problemSolution: { type: Number, default: 0, min: 0, max: 20 },
-    presentation: { type: Number, default: 0, min: 0, max: 20 },
-    futureScope: { type: Number, default: 0, min: 0, max: 20 },
+    idea: { type: Number, default: 0, min: 0, max: 10 },
+    speech: { type: Number, default: 0, min: 0, max: 10 },
+    problemSolution: { type: Number, default: 0, min: 0, max: 10 },
+    presentation: { type: Number, default: 0, min: 0, max: 10 },
+    futureScope: { type: Number, default: 0, min: 0, max: 10 },
     total: { type: Number, default: 0 }
 }, { _id: false });
 
@@ -17,7 +17,7 @@ const evaluationSchema = new mongoose.Schema({
         default: {}
     },
 
-    totalScore: { type: Number, required: true, default: 0 }, // Normalized out of 100
+    totalScore: { type: Number, required: true, default: 0 }, // Average out of 50
     updatedAt: { type: Date, default: Date.now }
 });
 
