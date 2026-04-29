@@ -48,6 +48,10 @@ async function seedSuperAdmin() {
 
 
 // Routes
+app.get('/ping', (req, res) => {
+    res.status(200).send('Server alive');
+});
+
 app.use('/api', apiRoutes);
 
 const PORT = process.env.PORT || 5000;
