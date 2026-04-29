@@ -4,6 +4,7 @@ const axios = require('axios');
 const Team = require('../models/Team');
 const Evaluation = require('../models/Evaluation');
 const Admin = require('../models/Admin');
+const Settings = require('../models/Settings');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -109,9 +110,44 @@ router.get('/team/:id', async (req, res) => {
 
         const evaluation = await Evaluation.findOne({ teamId });
 
+        // Check if results are published
+        const settings = await Settings.findOne();
+        const isPublished = settings ? settings.isResultPublished : false;
+
+        // Allow admins to see evaluation even if not published
+        const authHeader = req.header('Authorization');
+        let isAdmin = false;
+        if (authHeader) {
+            try {
+                const token = authHeader.replace('Bearer ', '');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+                const admin = await Admin.findById(decoded.id);
+                if (admin) isAdmin = true;
+            } catch (e) {}
+        }
+
+        // Calculate average scores if not an admin (public view)
+        let publicScores = null;
+        if (evaluation && evaluation.supervisorEvaluations) {
+            const evals = Array.from(evaluation.supervisorEvaluations.values());
+            if (evals.length > 0) {
+                publicScores = {
+                    idea: Math.round(evals.reduce((sum, e) => sum + (e.idea || 0), 0) / evals.length),
+                    speech: Math.round(evals.reduce((sum, e) => sum + (e.speech || 0), 0) / evals.length),
+                    problemSolution: Math.round(evals.reduce((sum, e) => sum + (e.problemSolution || 0), 0) / evals.length),
+                    presentation: Math.round(evals.reduce((sum, e) => sum + (e.presentation || 0), 0) / evals.length),
+                    futureScope: Math.round(evals.reduce((sum, e) => sum + (e.futureScope || 0), 0) / evals.length),
+                };
+            }
+        }
+
         res.json({
             team,
-            evaluation: evaluation || null
+            evaluation: (evaluation && (isPublished || isAdmin)) ? {
+                ...evaluation.toObject(),
+                scores: publicScores
+            } : null,
+            isPublished
         });
     } catch (error) {
         console.error(error);
@@ -179,6 +215,28 @@ router.post('/evaluate-team', async (req, res) => {
 // GET /top-teams
 router.get('/top-teams', async (req, res) => {
     try {
+        // Check if results are published
+        const settings = await Settings.findOne();
+        const isPublished = settings ? settings.isResultPublished : false;
+
+        // Allow super admin and admins to see results even if not published
+        const authHeader = req.header('Authorization');
+        let isAdmin = false;
+        if (authHeader) {
+            try {
+                const token = authHeader.replace('Bearer ', '');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+                const admin = await Admin.findById(decoded.id);
+                if (admin) isAdmin = true;
+            } catch (e) {
+                // Not an admin or invalid token
+            }
+        }
+
+        if (!isPublished && !isAdmin) {
+            return res.json({ topTeams: [], message: 'Results are not published yet.' });
+        }
+
         // Find top 3 evaluations by total score
         const topEvaluations = await Evaluation.find()
             .sort({ totalScore: -1 })
@@ -195,11 +253,22 @@ router.get('/top-teams', async (req, res) => {
         // Map evaluations to team names and combine
         const topTeams = topEvaluations.map(teamEval => {
             const team = teams.find(t => t.teamId === teamEval.teamId);
+            
+            // Calculate average scores for top teams display
+            const evals = Array.from(teamEval.supervisorEvaluations.values());
+            const avgScores = evals.length > 0 ? {
+                idea: Math.round(evals.reduce((sum, e) => sum + (e.idea || 0), 0) / evals.length),
+                speech: Math.round(evals.reduce((sum, e) => sum + (e.speech || 0), 0) / evals.length),
+                problemSolution: Math.round(evals.reduce((sum, e) => sum + (e.problemSolution || 0), 0) / evals.length),
+                presentation: Math.round(evals.reduce((sum, e) => sum + (e.presentation || 0), 0) / evals.length),
+                futureScope: Math.round(evals.reduce((sum, e) => sum + (e.futureScope || 0), 0) / evals.length),
+            } : null;
+
             return {
                 teamId: teamEval.teamId,
                 teamName: team ? team.teamName : 'Unknown',
                 totalScore: teamEval.totalScore,
-                scores: teamEval.scores
+                scores: avgScores
             };
         });
 
@@ -305,8 +374,18 @@ router.get('/admins', auth, superAdminAuth, async (req, res) => {
 router.post('/admins', auth, superAdminAuth, async (req, res) => {
     try {
         const { username, password, name, role } = req.body;
+        
+        if (!username || !password || !name) {
+            return res.status(400).json({ error: 'Username, password, and name are required' });
+        }
+
+        const existingAdmin = await Admin.findOne({ username });
+        if (existingAdmin) {
+            return res.status(400).json({ error: 'Username already exists' });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newAdmin = new Admin({ username, password: hashedPassword, name, role });
+        const newAdmin = new Admin({ username, password: hashedPassword, name, role: role || 'admin' });
         await newAdmin.save();
         res.status(201).json({ message: 'Admin created successfully', admin: { username, name, role } });
     } catch (error) {
@@ -378,6 +457,40 @@ router.delete('/team/:id', auth, superAdminAuth, async (req, res) => {
         res.json({ message: 'Team and its evaluations deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Error deleting team' });
+    }
+});
+
+// --- Settings Management ---
+
+// GET /settings (Public)
+router.get('/settings', async (req, res) => {
+    try {
+        let settings = await Settings.findOne();
+        if (!settings) {
+            settings = new Settings({ isResultPublished: false });
+            await settings.save();
+        }
+        res.json(settings);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching settings' });
+    }
+});
+
+// POST /settings (Super Admin only)
+router.post('/settings', auth, superAdminAuth, async (req, res) => {
+    try {
+        const { isResultPublished } = req.body;
+        let settings = await Settings.findOne();
+        if (!settings) {
+            settings = new Settings({ isResultPublished });
+        } else {
+            settings.isResultPublished = isResultPublished;
+            settings.updatedAt = new Date();
+        }
+        await settings.save();
+        res.json({ message: 'Settings updated successfully', settings });
+    } catch (error) {
+        res.status(500).json({ error: 'Error updating settings' });
     }
 });
 
