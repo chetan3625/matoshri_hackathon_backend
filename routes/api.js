@@ -125,8 +125,8 @@ router.post('/evaluate-team', async (req, res) => {
         const { teamId, scores, supervisorId } = req.body;
         console.log(`Evaluating team ${teamId} for supervisor ${supervisorId}`);
         
-        if (!['admin1', 'admin2', 'admin3', 'admin'].includes(supervisorId)) {
-            return res.status(400).json({ error: 'Invalid supervisor ID' });
+        if (!supervisorId) {
+            return res.status(400).json({ error: 'Supervisor ID is required' });
         }
 
         const team = await Team.findOne({ teamId });
@@ -142,28 +142,31 @@ router.post('/evaluate-team', async (req, res) => {
             evaluation = new Evaluation({ teamId });
         }
 
-        // Initialize if empty
-        if (!evaluation.supervisorEvaluations) {
-            evaluation.supervisorEvaluations = {};
-        }
-
-        evaluation.supervisorEvaluations[supervisorId] = {
+        // Set evaluation using Map.set()
+        evaluation.supervisorEvaluations.set(supervisorId, {
             idea, speech, problemSolution, presentation, futureScope,
             total: supervisorTotal
-        };
+        });
 
-        // Mark as modified for dynamic keys
-        evaluation.markModified('supervisorEvaluations');
-
-        const evals = evaluation.supervisorEvaluations;
-        const totalRaw = (evals.admin1?.total || 0) + 
-                         (evals.admin2?.total || 0) + 
-                         (evals.admin3?.total || 0) + 
-                         (evals.admin?.total || 0);
+        // Calculate total score based on the total number of registered admins
+        const totalRaw = Array.from(evaluation.supervisorEvaluations.values())
+            .reduce((sum, evalData) => sum + (evalData.total || 0), 0);
         
-        // Use divisor 300 since each supervisor is 100 max
-        evaluation.totalScore = Math.round((totalRaw / 300) * 100);
+        // Count all admins who can evaluate (role: 'admin')
+        const totalAdminsCount = await Admin.countDocuments({ role: 'admin' });
+        
+        // Check if the superadmin has also evaluated this team
+        const superAdminEvaluated = evaluation.supervisorEvaluations.has('superadmin');
+        
+        // The total number of judges for this specific team
+        const totalJudges = totalAdminsCount + (superAdminEvaluated ? 1 : 0);
+        
+        // Final score is the sum of points divided by the total potential judges (N admins + superadmin if they voted)
+        evaluation.totalScore = totalJudges > 0 ? Math.round(totalRaw / totalJudges) : 0;
+
+
         evaluation.updatedAt = new Date();
+
 
         await evaluation.save();
         res.json({ message: 'Evaluation saved successfully', evaluation });

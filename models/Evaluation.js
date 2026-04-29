@@ -12,11 +12,11 @@ const scoreSchema = new mongoose.Schema({
 const evaluationSchema = new mongoose.Schema({
     teamId: { type: String, required: true, unique: true },
     supervisorEvaluations: {
-        admin1: scoreSchema,
-        admin2: scoreSchema,
-        admin3: scoreSchema,
-        admin: scoreSchema
+        type: Map,
+        of: scoreSchema,
+        default: {}
     },
+
     totalScore: { type: Number, required: true, default: 0 }, // Normalized out of 100
     updatedAt: { type: Date, default: Date.now }
 });
