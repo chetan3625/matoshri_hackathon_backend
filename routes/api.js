@@ -132,11 +132,10 @@ router.get('/team/:id', async (req, res) => {
             const evals = Array.from(evaluation.supervisorEvaluations.values());
             if (evals.length > 0) {
                 publicScores = {
-                    idea: Math.round(evals.reduce((sum, e) => sum + (e.idea || 0), 0) / evals.length),
-                    speech: Math.round(evals.reduce((sum, e) => sum + (e.speech || 0), 0) / evals.length),
-                    problemSolution: Math.round(evals.reduce((sum, e) => sum + (e.problemSolution || 0), 0) / evals.length),
+                    originality: Math.round(evals.reduce((sum, e) => sum + (e.originality || 0), 0) / evals.length),
+                    technical: Math.round(evals.reduce((sum, e) => sum + (e.technical || 0), 0) / evals.length),
                     presentation: Math.round(evals.reduce((sum, e) => sum + (e.presentation || 0), 0) / evals.length),
-                    futureScope: Math.round(evals.reduce((sum, e) => sum + (e.futureScope || 0), 0) / evals.length),
+                    impact: Math.round(evals.reduce((sum, e) => sum + (e.impact || 0), 0) / evals.length),
                 };
             }
         }
@@ -170,8 +169,8 @@ router.post('/evaluate-team', async (req, res) => {
             return res.status(404).json({ error: 'Team not found' });
         }
 
-        const { idea, speech, problemSolution, presentation, futureScope } = scores;
-        const supervisorTotal = Number(idea) + Number(speech) + Number(problemSolution) + Number(presentation) + Number(futureScope);
+        const { originality, technical, presentation, impact } = scores;
+        const supervisorTotal = Number(originality) + Number(technical) + Number(presentation) + Number(impact);
 
         let evaluation = await Evaluation.findOne({ teamId });
         if (!evaluation) {
@@ -180,7 +179,7 @@ router.post('/evaluate-team', async (req, res) => {
 
         // Set evaluation using Map.set()
         evaluation.supervisorEvaluations.set(supervisorId, {
-            idea, speech, problemSolution, presentation, futureScope,
+            originality, technical, presentation, impact,
             total: supervisorTotal
         });
 
@@ -257,11 +256,10 @@ router.get('/top-teams', async (req, res) => {
             // Calculate average scores for top teams display
             const evals = Array.from(teamEval.supervisorEvaluations.values());
             const avgScores = evals.length > 0 ? {
-                idea: Math.round(evals.reduce((sum, e) => sum + (e.idea || 0), 0) / evals.length),
-                speech: Math.round(evals.reduce((sum, e) => sum + (e.speech || 0), 0) / evals.length),
-                problemSolution: Math.round(evals.reduce((sum, e) => sum + (e.problemSolution || 0), 0) / evals.length),
+                originality: Math.round(evals.reduce((sum, e) => sum + (e.originality || 0), 0) / evals.length),
+                technical: Math.round(evals.reduce((sum, e) => sum + (e.technical || 0), 0) / evals.length),
                 presentation: Math.round(evals.reduce((sum, e) => sum + (e.presentation || 0), 0) / evals.length),
-                futureScope: Math.round(evals.reduce((sum, e) => sum + (e.futureScope || 0), 0) / evals.length),
+                impact: Math.round(evals.reduce((sum, e) => sum + (e.impact || 0), 0) / evals.length),
             } : null;
 
             return {

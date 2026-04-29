@@ -1,11 +1,10 @@
 const mongoose = require('mongoose');
 
 const scoreSchema = new mongoose.Schema({
-    idea: { type: Number, default: 0, min: 0, max: 10 },
-    speech: { type: Number, default: 0, min: 0, max: 10 },
-    problemSolution: { type: Number, default: 0, min: 0, max: 10 },
+    originality: { type: Number, default: 0, min: 0, max: 10 },
+    technical: { type: Number, default: 0, min: 0, max: 20 },
     presentation: { type: Number, default: 0, min: 0, max: 10 },
-    futureScope: { type: Number, default: 0, min: 0, max: 10 },
+    impact: { type: Number, default: 0, min: 0, max: 10 },
     total: { type: Number, default: 0 }
 }, { _id: false });
 
