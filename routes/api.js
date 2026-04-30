@@ -7,6 +7,8 @@ const Admin = require('../models/Admin');
 const Settings = require('../models/Settings');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { generateCertificate, sendCertificateEmail } = require('../utils/certificateService');
+
 
 // Auth Middleware
 const auth = async (req, res, next) => {
@@ -303,12 +305,8 @@ router.get('/all-teams', async (req, res) => {
 });
 
 // POST /distribute-certificates
-router.post('/distribute-certificates', async (req, res) => {
+router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) => {
     try {
-        if (!process.env.N8N_CERTIFICATE_WEBHOOK) {
-            return res.status(400).json({ error: 'Certificate webhook URL not configured' });
-        }
-
         const teams = await Team.find().lean();
         const evaluations = await Evaluation.find().lean();
 
@@ -325,34 +323,46 @@ router.post('/distribute-certificates', async (req, res) => {
             else rankMap[tId] = 'Participated';
         }
 
-        let emailCount = 0;
+        let sentCount = 0;
+        let errorCount = 0;
 
-        // Iterate all teams and members
-        teams.forEach(team => {
-            // Teams that never got evaluated will just get 'Participated'
+        // Process teams sequentially or in small batches to avoid hitting rate limits
+        for (const team of teams) {
             const rank = rankMap[team.teamId] || 'Participated';
             
-            team.members.forEach(member => {
-                const payload = {
-                    memberName: member.name,
-                    email: member.email,
-                    teamName: team.teamName,
-                    teamId: team.teamId,
-                    rank: rank
-                };
+            for (const member of team.members) {
+                try {
+                    console.log(`Generating certificate for ${member.name} (${rank})...`);
+                    const pdfBytes = await generateCertificate(member.name, rank);
+                    
+                    console.log(`Sending email to ${member.email}...`);
+                    await sendCertificateEmail(member.email, member.name, rank, pdfBytes);
+                    
+                    sentCount++;
+                } catch (error) {
+                    console.error(`Failed to send certificate to ${member.email}:`, error.message);
+                    errorCount++;
+                }
+            }
+        }
 
-                // Fire off an individual webhook POST per member
-                axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, payload)
-                    .catch(err => console.error(`n8n certificate webhook error for ${member.email}:`, err.message));
-                
-                emailCount++;
-            });
+        // Also trigger n8n if webhook is configured
+        if (process.env.N8N_CERTIFICATE_WEBHOOK) {
+            axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, { 
+                event: 'certificates_distributed', 
+                sentCount, 
+                errorCount 
+            }).catch(err => console.error('n8n notification error:', err.message));
+        }
+
+        res.json({ 
+            message: 'Certificate distribution completed', 
+            sent: sentCount, 
+            errors: errorCount 
         });
-
-        res.json({ message: 'Certificate distribution triggered successfully', emailsQueued: emailCount });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Distribution Route Error:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });
 
@@ -492,4 +502,20 @@ router.post('/settings', auth, superAdminAuth, async (req, res) => {
     }
 });
 
+// GET /test-certificate (Public test)
+router.get('/test-certificate', async (req, res) => {
+    try {
+        const { name = 'John Doe', rank = '1st' } = req.query;
+        const pdfBytes = await generateCertificate(name, rank);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=test_certificate.pdf`);
+        res.send(Buffer.from(pdfBytes));
+    } catch (error) {
+        console.error('Test Certificate Error:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
 module.exports = router;
+
