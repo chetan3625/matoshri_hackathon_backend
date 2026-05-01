@@ -325,9 +325,15 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
 
         let sentCount = 0;
         let errorCount = 0;
+        
+        let totalMembers = 0;
+        teams.forEach(team => totalMembers += team.members.length);
 
         // Respond immediately to prevent client timeout
-        res.json({ message: 'Certificate distribution started in the background. Please check the logs later.' });
+        res.json({ 
+            message: 'Certificate distribution started in the background. Please check the logs later.',
+            totalMembers: totalMembers 
+        });
 
         // Run the process in the background
         setImmediate(async () => {
@@ -397,6 +403,16 @@ router.get('/certificate-logs', auth, superAdminAuth, async (req, res) => {
         res.json({ logs });
     } catch (error) {
         res.status(500).json({ error: 'Error fetching logs' });
+    }
+});
+
+// GET /distribution-progress (Super Admin only)
+router.get('/distribution-progress', auth, superAdminAuth, async (req, res) => {
+    try {
+        const processedCount = await CertificateLog.countDocuments();
+        res.json({ processedCount });
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching progress' });
     }
 });
 
