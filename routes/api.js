@@ -325,6 +325,7 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
 
         let sentCount = 0;
         let errorCount = 0;
+        const distributionLogs = [];
 
         // Process teams sequentially or in small batches to avoid hitting rate limits
         for (const team of teams) {
@@ -338,9 +339,26 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                     console.log(`Sending email to ${member.email}...`);
                     await sendCertificateEmail(member.email, member.name, rank, pdfBytes);
                     
+                    console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
+                    distributionLogs.push({
+                        teamName: team.teamName,
+                        name: member.name,
+                        email: member.email,
+                        certificate: rank,
+                        status: 'Sent'
+                    });
+                    
                     sentCount++;
                 } catch (error) {
-                    console.error(`Failed to send certificate to ${member.email}:`, error.message);
+                    console.error(`[DISTRIBUTION LOG] Failed | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank} | Error: ${error.message}`);
+                    distributionLogs.push({
+                        teamName: team.teamName,
+                        name: member.name,
+                        email: member.email,
+                        certificate: rank,
+                        status: 'Failed',
+                        error: error.message
+                    });
                     errorCount++;
                 }
             }
@@ -358,7 +376,8 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
         res.json({ 
             message: 'Certificate distribution completed', 
             sent: sentCount, 
-            errors: errorCount 
+            errors: errorCount,
+            logs: distributionLogs
         });
     } catch (error) {
         console.error('Distribution Route Error:', error);
