@@ -362,10 +362,13 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             const pdfBytes = await generateCertificate(member.name, rank);
                             
                             console.log(`Uploading certificate to Cloudinary for ${member.email}...`);
-                            const base64Pdf = Buffer.from(pdfBytes).toString('base64');
+                            
+                            // Write PDF to a temporary local file to ensure perfect binary encoding
+                            const tempFilePath = path.join(__dirname, '..', `temp_cert_${Date.now()}.pdf`);
+                            fs.writeFileSync(tempFilePath, Buffer.from(pdfBytes));
                             
                             const uploadResponse = await cloudinary.uploader.upload(
-                                `data:application/pdf;base64,${base64Pdf}`,
+                                tempFilePath,
                                 { 
                                     resource_type: "raw", 
                                     folder: "hackathon_certificates", 
@@ -373,6 +376,9 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                                     overwrite: true
                                 }
                             );
+                            
+                            // Delete the temporary file
+                            fs.unlinkSync(tempFilePath);
                             
                             console.log(`Sending certificate URL to n8n for ${member.email}...`);
                             
