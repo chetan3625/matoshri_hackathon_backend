@@ -9,6 +9,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { generateCertificate, sendCertificateEmail } = require('../utils/certificateService');
 const CertificateLog = require('../models/CertificateLog');
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({ 
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+  api_key: process.env.CLOUDINARY_API_KEY, 
+  api_secret: process.env.CLOUDINARY_API_SECRET 
+});
 
 // Auth Middleware
 const auth = async (req, res, next) => {
@@ -349,10 +356,22 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             console.log(`Generating certificate for ${member.name} (${rank})...`);
                             const pdfBytes = await generateCertificate(member.name, rank);
                             
-                            console.log(`Sending certificate data to n8n for ${member.email}...`);
+                            console.log(`Uploading certificate to Cloudinary for ${member.email}...`);
+                            const base64Pdf = Buffer.from(pdfBytes).toString('base64');
+                            
+                            const uploadResponse = await cloudinary.uploader.upload(
+                                `data:application/pdf;base64,${base64Pdf}`,
+                                { 
+                                    resource_type: "raw", 
+                                    folder: "hackathon_certificates", 
+                                    public_id: `Certificate_${team.teamName.replace(/\\s+/g, '_')}_${member.name.replace(/\\s+/g, '_')}`,
+                                    overwrite: true
+                                }
+                            );
+                            
+                            console.log(`Sending certificate URL to n8n for ${member.email}...`);
                             
                             if (process.env.N8N_CERTIFICATE_WEBHOOK) {
-                                const base64Pdf = Buffer.from(pdfBytes).toString('base64');
                                 await axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, {
                                     event: 'distribute_single_certificate',
                                     teamName: team.teamName,
@@ -360,7 +379,7 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                                     email: member.email,
                                     rank: rank,
                                     fileName: `Certificate_${member.name.replace(/\\s+/g, '_')}.pdf`,
-                                    certificateFileBase64: base64Pdf
+                                    certificateUrl: uploadResponse.secure_url
                                 });
                             } else {
                                 throw new Error('N8N_CERTIFICATE_WEBHOOK URL is missing in .env');
