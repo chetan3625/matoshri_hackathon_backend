@@ -409,10 +409,6 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             });
                             
                             sentCount++;
-                            
-                            // Delay 5 seconds before processing the next student to avoid overwhelming n8n
-                            console.log(`Waiting 5 seconds before processing the next certificate...`);
-                            await new Promise(resolve => setTimeout(resolve, 5000));
                         } catch (error) {
                             const errorMsg = `[FAILED] ${new Date().toLocaleString()} | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Rank: ${rank} | Error: ${error.message}\n`;
                             console.error(errorMsg.trim());
@@ -428,6 +424,10 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             });
                             errorCount++;
                         }
+                        
+                        // Delay 5 seconds before processing the next student to avoid overwhelming n8n
+                        console.log(`Waiting 5 seconds before processing the next certificate...`);
+                        await new Promise(resolve => setTimeout(resolve, 5000));
                     }
                 }
 
