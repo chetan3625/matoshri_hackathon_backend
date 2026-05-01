@@ -349,8 +349,22 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             console.log(`Generating certificate for ${member.name} (${rank})...`);
                             const pdfBytes = await generateCertificate(member.name, rank);
                             
-                            console.log(`Sending email to ${member.email}...`);
-                            await sendCertificateEmail(member.email, member.name, rank, pdfBytes);
+                            console.log(`Sending certificate data to n8n for ${member.email}...`);
+                            
+                            if (process.env.N8N_CERTIFICATE_WEBHOOK) {
+                                const base64Pdf = Buffer.from(pdfBytes).toString('base64');
+                                await axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, {
+                                    event: 'distribute_single_certificate',
+                                    teamName: team.teamName,
+                                    memberName: member.name,
+                                    email: member.email,
+                                    rank: rank,
+                                    fileName: `Certificate_${member.name.replace(/\\s+/g, '_')}.pdf`,
+                                    certificateFileBase64: base64Pdf
+                                });
+                            } else {
+                                throw new Error('N8N_CERTIFICATE_WEBHOOK URL is missing in .env');
+                            }
                             
                             console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
                             await CertificateLog.create({
