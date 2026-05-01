@@ -101,13 +101,14 @@ async function generateCertificate(studentName, rank) {
  * @param {string} name 
  * @param {string} rank 
  * @param {Uint8Array} pdfBytes 
+ * @param {string} certificateUrl
  */
-async function sendCertificateEmail(email, name, rank, pdfBytes) {
+async function sendCertificateEmail(email, name, rank, pdfBytes, certificateUrl) {
     const mailOptions = {
         from: `"Matoshri Hackathon" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: `Your Hackathon Certificate - ${rank}`,
-        text: `Hi ${name},\n\nCongratulations on your performance in the Matoshri Hackathon! Please find your ${rank} certificate attached.\n\nBest regards,\nMatoshri Team`,
+        text: `Hi ${name},\n\nCongratulations on your performance in the Matoshri Hackathon! Please find your ${rank} certificate attached.\n\nYou can also download a secure copy here: ${certificateUrl}\n\nBest regards,\nMatoshri Team`,
         attachments: [
             {
                 filename: `Certificate_${name.replace(/\s+/g, '_')}.pdf`,
