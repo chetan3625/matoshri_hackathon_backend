@@ -369,7 +369,7 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                                 { 
                                     resource_type: "raw", 
                                     folder: "hackathon_certificates", 
-                                    public_id: `Certificate_${team.teamName.trim().replace(/\\s+/g, '_')}_${member.name.trim().replace(/\\s+/g, '_')}`,
+                                    public_id: `Certificate_${team.teamName.trim().replace(/\\s+/g, '_')}_${member.name.trim().replace(/\\s+/g, '_')}.pdf`,
                                     overwrite: true
                                 }
                             );
