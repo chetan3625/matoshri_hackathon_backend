@@ -8,7 +8,7 @@ const Settings = require('../models/Settings');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { generateCertificate, sendCertificateEmail } = require('../utils/certificateService');
-
+const CertificateLog = require('../models/CertificateLog');
 
 // Auth Middleware
 const auth = async (req, res, next) => {
@@ -325,63 +325,78 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
 
         let sentCount = 0;
         let errorCount = 0;
-        const distributionLogs = [];
 
-        // Process teams sequentially or in small batches to avoid hitting rate limits
-        for (const team of teams) {
-            const rank = rankMap[team.teamId] || 'Participated';
-            
-            for (const member of team.members) {
-                try {
-                    console.log(`Generating certificate for ${member.name} (${rank})...`);
-                    const pdfBytes = await generateCertificate(member.name, rank);
+        // Respond immediately to prevent client timeout
+        res.json({ message: 'Certificate distribution started in the background. Please check the logs later.' });
+
+        // Run the process in the background
+        setImmediate(async () => {
+            try {
+                // Optionally clear old logs so it only shows the latest distribution attempt
+                await CertificateLog.deleteMany({});
+
+                for (const team of teams) {
+                    const rank = rankMap[team.teamId] || 'Participated';
                     
-                    console.log(`Sending email to ${member.email}...`);
-                    await sendCertificateEmail(member.email, member.name, rank, pdfBytes);
-                    
-                    console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
-                    distributionLogs.push({
-                        teamName: team.teamName,
-                        name: member.name,
-                        email: member.email,
-                        certificate: rank,
-                        status: 'Sent'
-                    });
-                    
-                    sentCount++;
-                } catch (error) {
-                    console.error(`[DISTRIBUTION LOG] Failed | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank} | Error: ${error.message}`);
-                    distributionLogs.push({
-                        teamName: team.teamName,
-                        name: member.name,
-                        email: member.email,
-                        certificate: rank,
-                        status: 'Failed',
-                        error: error.message
-                    });
-                    errorCount++;
+                    for (const member of team.members) {
+                        try {
+                            console.log(`Generating certificate for ${member.name} (${rank})...`);
+                            const pdfBytes = await generateCertificate(member.name, rank);
+                            
+                            console.log(`Sending email to ${member.email}...`);
+                            await sendCertificateEmail(member.email, member.name, rank, pdfBytes);
+                            
+                            console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
+                            await CertificateLog.create({
+                                teamName: team.teamName,
+                                memberName: member.name,
+                                email: member.email,
+                                rank: rank,
+                                status: 'Sent'
+                            });
+                            
+                            sentCount++;
+                        } catch (error) {
+                            console.error(`[DISTRIBUTION LOG] Failed | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank} | Error: ${error.message}`);
+                            await CertificateLog.create({
+                                teamName: team.teamName,
+                                memberName: member.name,
+                                email: member.email,
+                                rank: rank,
+                                status: 'Failed',
+                                error: error.message
+                            });
+                            errorCount++;
+                        }
+                    }
                 }
+
+                // Also trigger n8n if webhook is configured
+                if (process.env.N8N_CERTIFICATE_WEBHOOK) {
+                    axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, { 
+                        event: 'certificates_distributed', 
+                        sentCount, 
+                        errorCount 
+                    }).catch(err => console.error('n8n notification error:', err.message));
+                }
+            } catch (backgroundError) {
+                console.error('Background Distribution Error:', backgroundError);
             }
-        }
-
-        // Also trigger n8n if webhook is configured
-        if (process.env.N8N_CERTIFICATE_WEBHOOK) {
-            axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, { 
-                event: 'certificates_distributed', 
-                sentCount, 
-                errorCount 
-            }).catch(err => console.error('n8n notification error:', err.message));
-        }
-
-        res.json({ 
-            message: 'Certificate distribution completed', 
-            sent: sentCount, 
-            errors: errorCount,
-            logs: distributionLogs
         });
+
     } catch (error) {
         console.error('Distribution Route Error:', error);
         res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
+// GET /certificate-logs (Super Admin only)
+router.get('/certificate-logs', auth, superAdminAuth, async (req, res) => {
+    try {
+        const logs = await CertificateLog.find().sort({ timestamp: -1 });
+        res.json({ logs });
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching logs' });
     }
 });
 
