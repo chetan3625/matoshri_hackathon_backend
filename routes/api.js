@@ -364,13 +364,26 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                                 { 
                                     resource_type: "raw", 
                                     folder: "hackathon_certificates", 
-                                    public_id: `Certificate_${team.teamName.replace(/\\s+/g, '_')}_${member.name.replace(/\\s+/g, '_')}`,
+                                    public_id: `Certificate_${team.teamName.trim().replace(/\\s+/g, '_')}_${member.name.trim().replace(/\\s+/g, '_')}`,
                                     overwrite: true
                                 }
                             );
                             
-                            console.log(`Sending email to ${member.email}...`);
-                            await sendCertificateEmail(member.email, member.name, rank, pdfBytes, uploadResponse.secure_url);
+                            console.log(`Sending certificate URL to n8n for ${member.email}...`);
+                            
+                            if (process.env.N8N_CERTIFICATE_WEBHOOK) {
+                                await axios.post(process.env.N8N_CERTIFICATE_WEBHOOK, {
+                                    event: 'distribute_single_certificate',
+                                    teamName: team.teamName,
+                                    memberName: member.name,
+                                    email: member.email,
+                                    rank: rank,
+                                    fileName: `Certificate_${member.name.trim().replace(/\\s+/g, '_')}.pdf`,
+                                    certificateUrl: uploadResponse.secure_url
+                                });
+                            } else {
+                                throw new Error('N8N_CERTIFICATE_WEBHOOK URL is missing in .env');
+                            }
                             
                             console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
                             await CertificateLog.create({
