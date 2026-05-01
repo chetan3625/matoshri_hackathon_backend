@@ -10,6 +10,8 @@ const jwt = require('jsonwebtoken');
 const { generateCertificate, sendCertificateEmail } = require('../utils/certificateService');
 const CertificateLog = require('../models/CertificateLog');
 const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
+const path = require('path');
 
 cloudinary.config({ 
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
@@ -345,6 +347,9 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
         // Run the process in the background
         setImmediate(async () => {
             try {
+                const logFilePath = path.join(__dirname, '..', 'distribution.log');
+                fs.writeFileSync(logFilePath, `--- Distribution Started at ${new Date().toLocaleString()} ---\n`);
+                
                 // Optionally clear old logs so it only shows the latest distribution attempt
                 await CertificateLog.deleteMany({});
 
@@ -385,7 +390,10 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                                 throw new Error('N8N_CERTIFICATE_WEBHOOK URL is missing in .env');
                             }
                             
-                            console.log(`[DISTRIBUTION LOG] Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank}`);
+                            const logMsg = `[SUCCESS] ${new Date().toLocaleString()} | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Rank: ${rank}\n`;
+                            console.log(logMsg.trim());
+                            fs.appendFileSync(logFilePath, logMsg);
+                            
                             await CertificateLog.create({
                                 teamName: team.teamName,
                                 memberName: member.name,
@@ -400,7 +408,10 @@ router.post('/distribute-certificates', auth, superAdminAuth, async (req, res) =
                             console.log(`Waiting 5 seconds before processing the next certificate...`);
                             await new Promise(resolve => setTimeout(resolve, 5000));
                         } catch (error) {
-                            console.error(`[DISTRIBUTION LOG] Failed | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Certificate: ${rank} | Error: ${error.message}`);
+                            const errorMsg = `[FAILED] ${new Date().toLocaleString()} | Team: ${team.teamName} | Name: ${member.name} | Email: ${member.email} | Rank: ${rank} | Error: ${error.message}\n`;
+                            console.error(errorMsg.trim());
+                            fs.appendFileSync(logFilePath, errorMsg);
+                            
                             await CertificateLog.create({
                                 teamName: team.teamName,
                                 memberName: member.name,
