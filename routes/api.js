@@ -464,7 +464,9 @@ router.get('/certificate-logs', auth, superAdminAuth, async (req, res) => {
 router.get('/distribution-progress', auth, superAdminAuth, async (req, res) => {
     try {
         const processedCount = await CertificateLog.countDocuments();
-        res.json({ processedCount });
+        const sentCount = await CertificateLog.countDocuments({ status: 'Sent' });
+        const failedCount = await CertificateLog.countDocuments({ status: 'Failed' });
+        res.json({ processedCount, sentCount, failedCount });
     } catch (error) {
         res.status(500).json({ error: 'Error fetching progress' });
     }
