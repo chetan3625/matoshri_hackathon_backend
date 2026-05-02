@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const apiRoutes = require('./routes/api');
 const Admin = require('./models/Admin');
 const bcrypt = require('bcryptjs');
+const logger = require('./utils/logger');
 
 
 dotenv.config();
@@ -15,15 +16,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Request Logging Middleware
+app.use((req, res, next) => {
+    if (req.path !== '/ping') {
+        const admin = req.header('Authorization') ? 'Authenticated User' : 'Guest';
+        logger.info('API_REQUEST', `${req.method} ${req.path}`, null, admin, req.ip, req.method, req.path);
+    }
+    next();
+});
+
 // Database connection
 mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 }).then(() => {
     console.log('Connected to MongoDB');
+    logger.info('SYSTEM', 'Database connected successfully');
     seedSuperAdmin();
 }).catch(err => {
     console.error('MongoDB connection error:', err);
+    logger.error('SYSTEM', 'Database connection failed', err.message);
 });
 
 // Seed Super Admin
